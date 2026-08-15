@@ -1,0 +1,29 @@
+name: Check Telegram Bot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-bot:
+    name: Is the bot awake?
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Telegram only for the bot's name
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --retry 2 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")"
+          python3 - <<'PY' "$response"
+          import json
+          import sys
+
+          data = json.loads(sys.argv[1])
+          if not data.get("ok"):
+              raise SystemExit("Telegram said the bot is not ready.")
+          bot = data["result"]
+          print(f"PASS: Telegram knows this bot as @{bot['username']}.")
+          PY
