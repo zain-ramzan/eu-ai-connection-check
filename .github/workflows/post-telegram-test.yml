@@ -1,0 +1,50 @@
+name: Post Approved Telegram Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post-approved-test:
+    name: Post the approved test message
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find the channel where the bot was added
+        id: find-channel
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          updates="$(curl --fail --silent --show-error --retry 2 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?limit=50")"
+          channel_id="$(python3 - <<'PY' "$updates"
+          import json
+          import sys
+
+          data = json.loads(sys.argv[1])
+          for update in reversed(data.get("result", [])):
+              membership = update.get("my_chat_member", {})
+              chat = membership.get("chat", {})
+              member = membership.get("new_chat_member", {})
+              if chat.get("type") == "channel" and member.get("status") == "administrator":
+                  print(chat["id"])
+                  break
+          PY
+          )"
+          if [ -z "$channel_id" ]; then
+            echo "Could not find the new channel. The bot must be an administrator before this test can post."
+            exit 1
+          fi
+          echo "channel_id=$channel_id" >> "$GITHUB_OUTPUT"
+      - name: Post only the approved test message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHANNEL_ID: ${{ steps.find-channel.outputs.channel_id }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 2 \
+            --data-urlencode "chat_id=${CHANNEL_ID}" \
+            --data-urlencode "text=Test successful — EU AI Briefing bot is connected." \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" > /dev/null
+          echo "PASS: The approved test message was posted."
